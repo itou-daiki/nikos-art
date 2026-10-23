@@ -34,6 +34,10 @@ import {
  * @typedef {Object} PersonalizedChapterRewrite
  * @property {readonly string[]} paragraphs
  * @property {string} innerMonologue
+ *
+ * @typedef {Object} TextToken
+ * @property {string} text
+ * @property {'normal' | 'crimson' | 'salvage'} kind
  */
 
 export const CHAT_MODELS = Object.freeze([
@@ -89,11 +93,40 @@ const COURAGE_KEYWORDS = Object.freeze([
   '守る',
   'おかしい',
   'やめよう',
+  'やめなよ',
   '一歩',
   '病院',
   '親',
   '母',
   '合図',
+]);
+
+/** @type {readonly string[]} */
+const HORROR_HIGHLIGHT_WORDS = Object.freeze([
+  'オナラしてたよね？笑',
+  'またトイレ？',
+  'ギュルルッ',
+  'ブゥッ',
+  'オナラ',
+  'お腹が痛い',
+  '処刑',
+  '密室',
+  '金縛り',
+  '生き地獄',
+  '気のせい',
+  '考えすぎ',
+  'サボり',
+  '監視の目',
+  '無数の目',
+]);
+
+/** @type {readonly string[]} */
+const SALVATION_HIGHLIGHT_WORDS = Object.freeze([
+  '「——私も。」',
+  '「私も。」',
+  'ひとりじゃない',
+  '味方',
+  'IBS（過敏性腸症候群）',
 ]);
 
 /**
@@ -108,6 +141,61 @@ export const createInitialMetrics = () =>
     trust: 0,
     freeTalkCount: 0,
   });
+
+/**
+ * 章の基本BPMと現在のメトリクスからリアルタイムの心拍数（BPM）を算出する純粋関数
+ * @param {number} baseBpm
+ * @param {StoryMetrics} metrics
+ * @returns {number}
+ */
+export const calculateDynamicBpm = (baseBpm, metrics) => {
+  const panicIncrease = metrics.assumption * 6;
+  const calmDecrease = Math.min(20, Math.max(0, metrics.trust * 2));
+  const rawBpm = baseBpm + panicIncrease - calmDecrease;
+  return Math.min(175, Math.max(58, rawBpm));
+};
+
+/**
+ * 本文テキストを通常トークン・ホラー強調トークン・救済強調トークンに分割する純粋関数
+ * @param {string} text
+ * @returns {readonly TextToken[]}
+ */
+export const tokenizeHorrorText = (text) => {
+  if (text.length === 0) {
+    return Object.freeze([]);
+  }
+
+  const allMarkers = [
+    ...SALVATION_HIGHLIGHT_WORDS.map((w) => ({ word: w, kind: /** @type {const} */ ('salvage') })),
+    ...HORROR_HIGHLIGHT_WORDS.map((w) => ({ word: w, kind: /** @type {const} */ ('crimson') })),
+  ];
+
+  /** @type {TextToken[]} */
+  let tokens = [{ text, kind: 'normal' }];
+
+  for (const marker of allMarkers) {
+    /** @type {TextToken[]} */
+    const nextTokens = [];
+    for (const token of tokens) {
+      if (token.kind !== 'normal' || !token.text.includes(marker.word)) {
+        nextTokens.push(token);
+        continue;
+      }
+      const parts = token.text.split(marker.word);
+      parts.forEach((part, idx) => {
+        if (part.length > 0) {
+          nextTokens.push(Object.freeze({ text: part, kind: 'normal' }));
+        }
+        if (idx < parts.length - 1) {
+          nextTokens.push(Object.freeze({ text: marker.word, kind: marker.kind }));
+        }
+      });
+    }
+    tokens = nextTokens;
+  }
+
+  return Object.freeze(tokens);
+};
 
 /**
  * 自由記述テキストからプレイヤーの行動効果（ChoiceEffect）を判定する純粋関数
@@ -139,7 +227,6 @@ export const evaluateFreeTextAction = (text, isPatientRoute) => {
 
   for (const kw of ASSUMPTION_KEYWORDS) {
     if (normalized.includes(kw.toLowerCase())) {
-      // 「気にしすぎじゃないよ」など否定文脈の場合は除外
       const negatedPattern = `${kw.toLowerCase()}じゃない`;
       const negatedPattern2 = `${kw.toLowerCase()}なんて言わない`;
       if (!normalized.includes(negatedPattern) && !normalized.includes(negatedPattern2)) {
@@ -205,8 +292,6 @@ export const applyChoiceEffect = (current, effect, isFreeTalk) =>
 
 /**
  * 最終章完了時のメトリクスとストーリー設計図から到達エンディングを判定する純粋関数
- * - IBS当事者ルート（isPatientRoute === true）は必ずAが救われるエンドへ到達する
- * - 非IBS当事者ルートは選択やAI対話によってトゥルー・ハッピー・AI共創・ビター・バッドエンドへ分岐する
  * @param {StoryBlueprint} blueprint
  * @param {StoryMetrics} metrics
  * @returns {EndingDefinition}
@@ -263,39 +348,39 @@ export const determineEnding = (blueprint, metrics) => {
 export const buildFallbackReaction = (blueprint, chapterNumber, effect, playerInput) => {
   if (blueprint.isPatientRoute) {
     const responses = [
-      `あなたの「${playerInput}」という思いが、静かに胸の奥に染み渡っていく。自分の痛みを無理に否定しなくていいのだと、心が少しだけ軽くなった。`,
-      '深く息を吐き出すと、張り詰めていたお腹の緊張がほんの少し和らいだ。自分を守るための選択肢を持っていることが、確かな支えになっている。',
-      '過去の涙を肯定できたことで、胸のつかえがスッと溶けていく。あの夜の自分が諦めなかったからこそ、今の自分がここにいる。',
-      'あなたの「私も。」という言葉に、親友はポロポロと涙をこぼしながら頷いた。孤独だった二つの心が、確かな温もりで結ばれた瞬間だった。',
-      'ひとりじゃない。そう実感した瞬間、教室の窓から差し込む光がこれまでよりずっと優しく見えた。',
+      `あなたの「${playerInput}」という思いが、暗闇の中で静かに灯る。自分の痛みを無理に押し殺さなくていいのだと、心拍数がほんの少し落ち着いた。`,
+      '深く息を吐き出すと、檻のように迫っていた教室の圧迫感がわずかに緩んだ。自分を守るための退路を持っていることが、確かな命綱になっている。',
+      '過去の暗い部屋の記憶を肯定できたことで、胸を締め付けていた呪縛がスッと溶けていく。あの夜の自分が叫んだからこそ、今の自分が生きている。',
+      'あなたの「私も。」という言葉に、親友は震える肩を押さえて涙をこぼした。恐怖の密室で孤独だった二つの魂が、確かな温もりで結ばれた瞬間だった。',
+      'ひとりじゃない。そう実感した瞬間、不気味だった教室の静寂は消え、窓から澄んだ朝の光が差し込んできた。',
     ];
     return responses[Math.min(responses.length - 1, Math.max(0, chapterNumber - 1))];
   }
 
   if (effect.assumptionDelta >= 3) {
-    return 'その言葉を聞いた瞬間、陽菜（A）はハッとしたように言葉を飲み込み、少し寂しそうに目を伏せた。「……そっか、そうだよね」と微笑む彼女の声には、見えない壁ができてしまったような冷たさがあった。';
+    return '【警告：心の断絶】その言葉を聞いた瞬間、陽菜（A）の瞳からスッと光が消えた。「……そっか、そうだよね」と凍りついた声で呟く彼女の背後で、教室の暗闇がいっそう深く濃くなった気がした。';
   }
 
   if (effect.trustDelta < 0 || effect.courageDelta <= -2) {
-    return '言葉を飲み込んで目を逸らしたあと、胸の奥にチクリとした小さな痛みが残った。教室のざわめきが、いつもより遠く冷たく聞こえる。';
+    return '目を逸らして沈黙を選んだ瞬間、時計の秒針の音が不気味なほど大きく耳元で響いた。暗闇の中から、無数の視線がこちらを覗き込んでいる気がする。';
   }
 
   if (effect.reactionKey.startsWith('free_')) {
-    return `あなたの「${playerInput}」という言葉に、陽菜（A）は驚いたように顔を上げ、やがて安心したように柔らかく微笑んだ。「……そんなふうに言ってくれて、本当にありがとう。なんだかすごく救われた気がするよ」`;
+    return `あなたの「${playerInput}」という言葉が暗闇を切り裂くように届き、陽菜（A）はハッと顔を上げた。張り詰めていた彼女の表情が和らぎ、「……ありがとう。その言葉で、息ができるようになった気がするよ」と静かに微笑んだ。`;
   }
 
   const positiveResponses = [
-    '何気ないやり取りの中に、確かな優しさが流れる。まだ相手のすべてを知らなくても、そのまなざしは次の時間への伏線となっていく。',
-    '目に見えない苦しさがどれほど人を追い詰めるか、身をもって知ったことで、世界の見え方が大きく変わり始めていた。',
-    '決めつけずに耳を傾けようとするあなたの誠実な姿勢に、陽菜（A）は張り詰めていた肩の力を抜き、少しずつ本当の思いを語り始めた。',
-    '彼女がくぐり抜けてきた長い夜と涙の記憶を受け止めたことで、ふたりの間には表面的な同情ではない、深い理解と信頼が生まれた。',
-    'あなたが踏み出したその一歩が、静まり返った教室の空気を確かな温もりへと変えていった。',
+    '穏やかなやり取りの裏で、予鈴のチャイムが遠くに響く。まだ誰も、これから始まる静寂の恐怖を知らない。',
+    '外からは一切見えない痛みが、これほどまでに人間を追い詰めるという事実。冷や汗とともに、これまで見えていなかった世界の裏側が浮かび上がる。',
+    '決めつけずに耳を傾けようとするあなたの誠実な声に、陽菜（A）は凍りついていた肩の力を抜き、長年隠してきた秘密の扉を少しずつ開いてくれた。',
+    '彼女がくぐり抜けてきた暗い夜と涙の記憶を受け止めたことで、恐怖の密室に確かな「連帯の光」が差し込み始めた。',
+    'あなたが恐怖に打ち勝って踏み出したその一歩が、教室を支配していた冷酷な空気を確実に塗り替えていった。',
   ];
   return positiveResponses[Math.min(positiveResponses.length - 1, Math.max(0, chapterNumber - 1))];
 };
 
 /**
- * 事前診断結果にもとづき、AIによる「パーソナライズ診断レポート＆導入プロローグ」を生成するプロンプトを組み立てる純粋関数
+ * 事前診断結果にもとづき、AIによる「トラウマ・共感プロファイル診断レポート＆導入プロローグ」を生成するプロンプト
  * @param {PreDiagnosisAnswers} answers
  * @param {StoryBlueprint} blueprint
  * @returns {string}
@@ -309,23 +394,23 @@ export const buildPreDiagnosisAiPrompt = (answers, blueprint) => {
   const freeComment = answers.freeComment.trim() || '（特になし）';
 
   return `
-あなたはインタラクティブ・ノベルゲーム『静寂の教室と、ふたりの呼吸』の専属ストーリーディレクターです。
-プレイヤーの事前診断結果をもとに、プレイヤーに最も深く刺さる「個別最適化メッセージ」と「専用プロローグ」を作成してください。
+あなたは心理ホラー×共感ノベルゲーム『静寂の教室と、ふたりの呼吸 — SILENT CLASSROOM —』の専属ディレクターです。
+プレイヤーの事前診断（トラウマ・閉所恐怖プロファイリング）結果をもとに、プレイヤーの心に深く刺さる「プロファイル解析メッセージ」と「ホラーノベル風の導入プロローグ」を作成してください。
 
 【プレイヤー診断データ】
 - 名前: ${answers.playerName || '結城 蓮'}
 - 体調・不安の経験: ${exp.label}（${exp.description}）
-- 最も緊張感・リアリティを感じる場面: ${scene.label}
-- 最も怖い・つらいと感じる要素: ${fear.label}
+- 最も逃げ場がないと感じる密室舞台: ${scene.label}
+- 最も恐れる処刑・状況: ${fear.label}
 - 希望する視点・関係性: ${rel.label}
-- 追い詰められた時の心のクセ: ${coping.label}
+- 追い詰められた時の精神防衛反応: ${coping.label}
 - プレイヤーの自由記述: ${freeComment}
-- 決定されたルート: ${blueprint.routeTitle}
+- 決定されたシナリオ: ${blueprint.routeTitle}
 
 【出力形式】
-以下の2段落構成（合計250〜350文字程度）で、温かく没入感のある日本語で出力してください（見出し記号は不要）：
-1段落目：プレイヤーの診断結果（特に「${scene.placeName}」への緊張感や「${coping.label}」という傾向、自由記述の内容）に優しく寄り添い、この物語があなたのためにどう最適化されたかを伝えるメッセージ。
-2段落目：これから始まる第一部へとプレイヤーを誘う、情景が浮かぶような専用プロローグ文章。
+以下の2段落構成（合計250〜350文字程度）で出力してください（見出し記号は不要）：
+1段落目：プレイヤーが選んだ密室（${scene.placeName}）や恐怖の核（${fear.label}）、自由記述の内容に寄り添い、この物語があなた専用の心理ホラー＆救済体験としてどう構築されたかを伝える文章。
+2段落目：これから始まる第一幕へとプレイヤーを引き込む、静寂と緊張感が漂うサウンドノベル風の専用プロローグ文章。
 `.trim();
 };
 
@@ -351,27 +436,27 @@ export const buildPersonalizedChapterAiPrompt = ({
   const coping = COPING_STYLE_OPTIONS[answers.copingStyle];
 
   return `
-あなたはIBS（過敏性腸症候群）と「見えない痛みへの理解」をテーマにした青春ノベルゲームの脚本AIです。
-以下の「章の骨格（ベースシナリオ）」を守りつつ、プレイヤーの「事前診断プロファイル」と「これまでの選択の積み重ね」に合わせて、プレイヤーの心に最も深く刺さるように本文（3段落）と心の声（モノローグ1文）を個別最適化して執筆してください。
+あなたはIBS（過敏性腸症候群）の「静かな教室での予期不安・腹鳴・視線の恐怖」をリアルな心理ホラー（サウンドノベル風）として描き、そこから理解と連帯による救済へと導くゲームの脚本AIです。
+以下の「章の骨格（ベースシナリオ）」を必ず守りつつ、プレイヤーの「事前診断プロファイル」と「現在の状態」に合わせて、本文（3段落）と脳内モノローグ（1文）を執筆してください。
 
 【プレイヤーの事前診断プロファイル】
 - 主人公表記: ${blueprint.playerRoleLabel}
-- ルート: ${blueprint.routeTitle}（${blueprint.isPatientRoute ? 'IBS当事者A視点・救済重視' : 'B視点・気づきと対話重視'}）
-- 最もリアルに感じる舞台: ${scene.placeName}（${scene.ambiance}）
-- 最も刺さる恐怖・葛藤: ${fear.coreFear}
-- 主人公の性格・防衛スタイル: ${coping.monologueTone}
+- ルート: ${blueprint.routeTitle}（${blueprint.isPatientRoute ? 'IBS当事者A視点・密室の恐怖から確実な救済へ' : 'B視点・日常の暗転と他者の痛みへの気づき'}）
+- 最も恐怖を感じる密室舞台: ${scene.placeName}（${scene.ambiance}）
+- 最も刺さる恐怖の核: ${fear.coreFear}
+- 追い詰められた時の脳内反応: ${coping.monologueTone}
 - 事前診断での自由記述: ${answers.freeComment.trim() || 'なし'}
 
-【現在のストーリー状態】
-- 章: ${chapterData.partLabel}「${chapterData.title}」
-- 現在の共感度: ${metrics.empathy} / 決めつけ度: ${metrics.assumption} / 信頼度: ${metrics.trust}
+【現在のゲームステータス】
+- 章: ${chapterData.partLabel}「${chapterData.title}」（基本心拍数: ${chapterData.baseBpm} BPM / 静寂圧迫度: ${chapterData.silenceLevel}%）
+- 共感度: ${metrics.empathy} / 決めつけ度: ${metrics.assumption} / 信頼度: ${metrics.trust}
 - 直前のシーンの余韻: ${lastReactionText || '物語の幕開け'}
 
 【この章で必ず描くべきベースシナリオ（骨格）】
 段落1ベース: ${chapterData.paragraphs[0]}
 段落2ベース: ${chapterData.paragraphs[1]}
 段落3ベース: ${chapterData.paragraphs[2]}
-心の声ベース: ${chapterData.innerMonologue}
+脳内モノローグベース: ${chapterData.innerMonologue}
 
 【厳守する出力フォーマット】
 以下の4行構成（区切り文字「===」を使用）で出力してください。余計な解説は一切含めないでください。
@@ -381,7 +466,7 @@ export const buildPersonalizedChapterAiPrompt = ({
 ===
 段落3の文章
 ===
-（心の声・モノローグの文章）
+（脳内モノローグの文章）
 `.trim();
 };
 
@@ -430,25 +515,25 @@ export const buildSceneReactionPrompt = ({
   metrics,
 }) => {
   return `
-あなたは青春ノベルゲーム『静寂の教室と、ふたりの呼吸』の語り手および登場人物「朝霧陽菜（A）」です。
-現在のシーンでプレイヤーが取った行動・発言に対して、物語の反応描写（150〜220文字程度）を生成してください。
+あなたは心理ホラー×共感ノベルゲーム『静寂の教室と、ふたりの呼吸』の語り手および登場人物「朝霧陽菜（A）」です。
+現在のシーンでプレイヤーが取った行動・発言に対して、サウンドノベル風の反応描写（150〜220文字程度）を生成してください。
 
 【現在のシーン】
 - ルート: ${blueprint.routeTitle}
 - 章: ${chapterData.partLabel}「${chapterData.title}」（場所: ${chapterData.locationLabel}）
 - シーンのあらすじ: ${chapterData.paragraphs.join(' ')}
-- プレイヤーの性格傾向: ${COPING_STYLE_OPTIONS[answers.copingStyle].label}
+- プレイヤーの防衛傾向: ${COPING_STYLE_OPTIONS[answers.copingStyle].label}
 - プレイヤーの選択/発言（${isFreeTalk ? '自由入力による直接対話' : '選択肢'}）: 「${playerActionText}」
-- 現在の関係性スコア: 共感度=${metrics.empathy}, 決めつけ度=${metrics.assumption}, 信頼度=${metrics.trust}
+- 現在のスコア: 共感度=${metrics.empathy}, 決めつけ度=${metrics.assumption}, 信頼度=${metrics.trust}
 
 【執筆指針】
-- ${blueprint.isPatientRoute ? 'プレイヤーはIBSを抱える陽菜（A）自身です。彼女の心が少し救われたり、親友との絆を感じたりする温かい描写にしてください。' : 'プレイヤーはBです。もしプレイヤーの発言が「自分の浅い経験だけで決めつける内容（気にしすぎ、すぐ治る等）」や「冷たい態度」であれば、陽菜（A）が静かに傷つき心を閉ざすリアルな反応を描いてください。逆に誠実に耳を傾けたり寄り添う内容であれば、陽菜の表情がほころび、心の距離が縮まる描写にしてください。'}
-- 小説の地の文と陽菜の短いセリフを織り交ぜ、1段落（150〜220文字）で出力してください。
+- ${blueprint.isPatientRoute ? 'プレイヤーはIBSを抱える陽菜（A）自身です。暗闇の恐怖がほんの少し和らぎ、親友との絆や生き延びる希望を感じられる描写にしてください。' : 'プレイヤーはBです。もしプレイヤーの発言が「自分の浅い経験だけで決めつける内容（気にしすぎ、気合いで治る等）」や「嘲笑・逃避」であれば、陽菜（A）の瞳から光が消え、教室の暗闇と不気味な静寂がいっそう深まるホラー調の反応を描いてください。逆に誠実に耳を傾けたり寄り添う内容であれば、暗闇の中に温かい光が差し込み、陽菜が救われた表情を見せる描写にしてください。'}
+- 1段落（150〜220文字）で出力してください。
 `.trim();
 };
 
 /**
- * エンディング到達時に、登場人物A（朝霧陽菜）からプレイヤー個人宛ての『あなた専用の手紙』を生成するプロンプト
+ * エンディング到達時に、登場人物A（朝霧陽菜）からプレイヤー個人宛ての『あなた専用の手紙（または残された記録）』を生成するプロンプト
  * @param {Object} params
  * @param {PreDiagnosisAnswers} params.answers
  * @param {StoryBlueprint} params.blueprint
@@ -464,26 +549,26 @@ export const buildPersonalLetterPrompt = ({
 }) => {
   const playerName = answers.playerName.trim() || 'あなた';
   const logSummary = actionLogs
-    .map((entry) => `- 第${entry.chapterNumber}部: 「${entry.playerInput}」`)
+    .map((entry) => `- 第${entry.chapterNumber}幕: 「${entry.playerInput}」`)
     .join('\n');
 
   return `
 あなたは物語の登場人物「朝霧 陽菜（あさぎり ひな / IBSを抱える高校生）」です。
-物語を終えたプレイヤー（${playerName}）に向けて、事前診断の内容と物語の中で選んでくれた言葉を振り返りながら、心に響く『あなた専用の手紙』を書いてください。
+物語を終えたプレイヤー（${playerName}）に向けて、事前診断の内容と物語の中で選んでくれた言葉を振り返りながら、『あなた専用の手紙（バッドエンドの場合は残された未送信メモ）』を書いてください。
 
 【プレイヤーと物語の記録】
 - プレイヤー名: ${playerName}
 - プレイしたルート: ${blueprint.routeTitle}
-- プレイヤーが事前診断で選んだ一番緊張する場面: ${TRIGGER_SCENE_OPTIONS[answers.triggerScene].label}
-- プレイヤーが事前診断で選んだ心のクセ: ${COPING_STYLE_OPTIONS[answers.copingStyle].label}
+- プレイヤーが事前診断で選んだ密室舞台: ${TRIGGER_SCENE_OPTIONS[answers.triggerScene].label}
+- プレイヤーが事前診断で選んだ精神防衛傾向: ${COPING_STYLE_OPTIONS[answers.copingStyle].label}
 - プレイヤーの事前診断自由記述: ${answers.freeComment.trim() || 'なし'}
 - 到達したエンディング: ${ending.badge}『${ending.title}』（${ending.subtitle}）
 - プレイヤーが物語の中で選んだ行動・言葉:
 ${logSummary}
 
 【執筆ルール】
-- 250〜380文字程度で、手紙形式（「${playerName}へ」で始まり、「朝霧 陽菜より」で結ぶ）にしてください。
-- ${blueprint.isPatientRoute ? '同じIBSや見えない痛みを抱える仲間として、プレイヤー自身のこれまでの頑張りを深く肯定し、「あなたはひとりじゃないよ」と温かく包み込む手紙にしてください。' : ending.id.startsWith('bad_') ? 'すれ違ってしまった寂しさを滲ませつつも、相手を一方的に責めるのではなく「見えない痛みが誰の隣にもあることを、いつか思い出してくれたら嬉しい」と静かに語りかける手紙にしてください。' : 'プレイヤーが物語の中で掛けてくれた具体的な言葉に触れながら、どれほど救われたか、そしてこれからも支え合っていきたいという感謝を伝える手紙にしてください。'}
+- 250〜380文字程度で出力してください。
+- ${blueprint.isPatientRoute ? '同じIBSや見えない痛みを抱えて暗闇を生き延びてきた同志として、プレイヤー自身のこれまでの苦闘を深く肯定し、「もう教室の静寂の中でひとりじゃないよ」と温かく包み込む手紙にしてください。' : ending.isHorrorBadEnd ? 'ホラーバッドエンド後の「破り捨てられたノートの切れ端」または「未送信のメッセージ」として、無自覚な決めつけや嘲笑の目がどれほど人を追い詰めるかを静かに、背筋が冷たくなるような筆致で突きつける文章にしてください。' : 'プレイヤーが暗闇の中で掛けてくれた具体的な言葉に触れながら、どれほど救われたか、そしてこれからも一緒に呼吸していきたいという感謝を伝える温かい手紙にしてください。'}
 `.trim();
 };
 

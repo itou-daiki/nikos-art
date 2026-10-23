@@ -14,6 +14,7 @@ import {
   buildPersonalizedChapters,
   buildPreDiagnosisAiPrompt,
   buildSceneReactionPrompt,
+  calculateDynamicBpm,
   callGeminiWithFallback,
   createInitialMetrics,
   createStoryBlueprint,
@@ -21,6 +22,7 @@ import {
   evaluateFreeTextAction,
   formatFileTimestamp,
   parsePersonalizedChapterRewrite,
+  tokenizeHorrorText,
 } from './core.js';
 
 /**
@@ -31,6 +33,7 @@ import {
  * @typedef {import('./scenarios.js').RelationshipType} RelationshipType
  * @typedef {import('./scenarios.js').CopingStyleType} CopingStyleType
  * @typedef {import('./scenarios.js').StoryRouteId} StoryRouteId
+ * @typedef {import('./scenarios.js').SoundPresetType} SoundPresetType
  * @typedef {import('./scenarios.js').StoryBlueprint} StoryBlueprint
  * @typedef {import('./scenarios.js').ChapterData} ChapterData
  * @typedef {import('./scenarios.js').ChoiceEffect} ChoiceEffect
@@ -47,6 +50,7 @@ import {
  * @property {boolean} hasApiKey
  * @property {boolean} showApiKeyError
  * @property {boolean} aiRewriteEnabled
+ * @property {boolean} soundEnabled
  * @property {PreDiagnosisAnswers} answers
  * @property {StoryBlueprint | null} blueprint
  * @property {readonly ChapterData[]} chapters
@@ -65,6 +69,213 @@ import {
  */
 
 /**
+ * Web Audio API を用いた外部音源不要のプロシージャル・ホラー音響エンジン
+ */
+const createHorrorSoundEngine = () => {
+  /** @type {AudioContext | null} */
+  let audioCtx = null;
+  /** @type { ReturnType<typeof setInterval> | null } */
+  let ambientTimer = null;
+  let isEnabled = true;
+
+  const ensureContext = () => {
+    if (!isEnabled) {
+      return null;
+    }
+    if (audioCtx === null && typeof window !== 'undefined' && 'AudioContext' in window) {
+      audioCtx = new window.AudioContext();
+    }
+    if (audioCtx !== null && audioCtx.state === 'suspended') {
+      void audioCtx.resume();
+    }
+    return audioCtx;
+  };
+
+  /**
+   * ドクン…という心拍音（二重低音パルス）を鳴らす
+   * @param {boolean} isHeavy
+   */
+  const playHeartbeatOnce = (isHeavy) => {
+    const ctx = ensureContext();
+    if (ctx === null) {
+      return;
+    }
+    const now = ctx.currentTime;
+    const peakGain = isHeavy ? 0.24 : 0.12;
+
+    const triggerPulse = (offsetSec, freq, gainVal) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + offsetSec);
+      osc.frequency.exponentialRampToValueAtTime(28, now + offsetSec + 0.14);
+
+      gain.gain.setValueAtTime(0.001, now + offsetSec);
+      gain.gain.linearRampToValueAtTime(gainVal, now + offsetSec + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + offsetSec + 0.16);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + offsetSec);
+      osc.stop(now + offsetSec + 0.17);
+    };
+
+    triggerPulse(0, 68, peakGain);
+    triggerPulse(0.18, 54, peakGain * 0.75);
+  };
+
+  /**
+   * 静寂の教室に響く時計の秒針音「カチ…」を鳴らす
+   */
+  const playClockTick = () => {
+    const ctx = ensureContext();
+    if (ctx === null) {
+      return;
+    }
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(1100, now);
+    osc.frequency.exponentialRampToValueAtTime(320, now + 0.025);
+
+    gain.gain.setValueAtTime(0.05, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.035);
+  };
+
+  /**
+   * サウンドノベル風タイプライター打鍵音
+   */
+  const playTypeBlip = () => {
+    const ctx = ensureContext();
+    if (ctx === null) {
+      return;
+    }
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(480, now);
+    gain.gain.setValueAtTime(0.018, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.022);
+  };
+
+  /**
+   * 恐怖・決めつけ時の不協和音スティンガー
+   */
+  const playHorrorStinger = () => {
+    const ctx = ensureContext();
+    if (ctx === null) {
+      return;
+    }
+    const now = ctx.currentTime;
+    const freqs = [110, 116.5, 233];
+    for (const f of freqs) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(f, now);
+      gain.gain.setValueAtTime(0.06, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.68);
+    }
+  };
+
+  /**
+   * 救済・共感成立時の澄んだチャイム和音
+   */
+  const playSalvationChime = () => {
+    const ctx = ensureContext();
+    if (ctx === null) {
+      return;
+    }
+    const now = ctx.currentTime;
+    const freqs = [523.25, 659.25, 783.99];
+    freqs.forEach((f, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f, now + idx * 0.08);
+      gain.gain.setValueAtTime(0.05, now + idx * 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.7);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + idx * 0.08);
+      osc.stop(now + idx * 0.08 + 0.75);
+    });
+  };
+
+  const stopAmbientLoop = () => {
+    if (ambientTimer !== null) {
+      clearInterval(ambientTimer);
+      ambientTimer = null;
+    }
+  };
+
+  /**
+   * 章のBPMとプリセットに応じた環境音ループを開始する
+   * @param {number} bpm
+   * @param {SoundPresetType} preset
+   */
+  const startAmbientLoop = (bpm, preset) => {
+    stopAmbientLoop();
+    if (!isEnabled || preset === 'dawn') {
+      return;
+    }
+    const intervalMs = Math.max(420, Math.round((60 / Math.max(60, bpm)) * 1000));
+    let tickCounter = 0;
+    ambientTimer = setInterval(() => {
+      if (!isEnabled) {
+        return;
+      }
+      tickCounter += 1;
+      if (preset === 'clock_panic') {
+        playHeartbeatOnce(true);
+        playClockTick();
+      } else if (preset === 'heartbeat_heavy') {
+        playHeartbeatOnce(true);
+      } else if (preset === 'sorrow' && tickCounter % 2 === 0) {
+        playHeartbeatOnce(false);
+      } else if (preset === 'calm' && tickCounter % 3 === 0) {
+        playClockTick();
+      }
+    }, intervalMs);
+  };
+
+  /**
+   * @param {boolean} enabled
+   */
+  const setSoundEnabled = (enabled) => {
+    isEnabled = enabled;
+    if (!enabled) {
+      stopAmbientLoop();
+    }
+  };
+
+  return Object.freeze({
+    playTypeBlip,
+    playHorrorStinger,
+    playSalvationChime,
+    startAmbientLoop,
+    stopAmbientLoop,
+    setSoundEnabled,
+  });
+};
+
+/**
  * 初期状態を生成する純粋関数
  * @returns {AppState}
  */
@@ -75,6 +286,7 @@ const createInitialState = () =>
     hasApiKey: false,
     showApiKeyError: false,
     aiRewriteEnabled: true,
+    soundEnabled: true,
     answers: Object.freeze({
       playerName: '結城 蓮',
       experience: 'empathic_observer',
@@ -160,6 +372,109 @@ const overrideBlueprintRoute = (answers, targetRouteId) => {
 };
 
 /**
+ * 暗闇に浮かぶ「クラスメイトの視線（目）」を背景レイヤーに描画する
+ * @param {HTMLElement} layer
+ * @param {number} count
+ */
+const renderGazeEyes = (layer, count) => {
+  layer.innerHTML = '';
+  const clampedCount = Math.min(24, Math.max(0, count));
+  if (clampedCount === 0) {
+    return;
+  }
+
+  // 画面端（左右・上下）に不気味な目を配置する決定論的座標テーブル
+  const positions = [
+    { top: '8%', left: '4%' },
+    { top: '14%', left: '88%' },
+    { top: '24%', left: '2%' },
+    { top: '28%', left: '92%' },
+    { top: '42%', left: '3%' },
+    { top: '46%', left: '91%' },
+    { top: '62%', left: '4%' },
+    { top: '66%', left: '89%' },
+    { top: '78%', left: '6%' },
+    { top: '82%', left: '87%' },
+    { top: '18%', left: '11%' },
+    { top: '20%', left: '82%' },
+    { top: '54%', left: '8%' },
+    { top: '56%', left: '85%' },
+    { top: '88%', left: '14%' },
+    { top: '90%', left: '78%' },
+    { top: '6%', left: '22%' },
+    { top: '7%', left: '72%' },
+  ];
+
+  for (let i = 0; i < clampedCount; i += 1) {
+    const pos = positions[i % positions.length];
+    const wrapper = document.createElement('div');
+    wrapper.className = 'gaze-eye';
+    wrapper.style.top = pos.top;
+    wrapper.style.left = pos.left;
+    wrapper.style.animationDelay = `${(i * 0.37) % 3.5}s`;
+
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('viewBox', '0 0 60 30');
+    svg.setAttribute('width', '46');
+    svg.setAttribute('height', '24');
+
+    const outer = document.createElementNS(svgNS, 'path');
+    outer.setAttribute('d', 'M2,15 Q30,-5 58,15 Q30,35 2,15 Z');
+    outer.setAttribute('fill', '#1a0508');
+    outer.setAttribute('stroke', '#ef4444');
+    outer.setAttribute('stroke-width', '2');
+
+    const iris = document.createElementNS(svgNS, 'circle');
+    iris.setAttribute('cx', '30');
+    iris.setAttribute('cy', '15');
+    iris.setAttribute('r', '6');
+    iris.setAttribute('fill', '#dc2626');
+
+    const pupil = document.createElementNS(svgNS, 'circle');
+    pupil.setAttribute('cx', '30');
+    pupil.setAttribute('cy', '15');
+    pupil.setAttribute('r', '2.5');
+    pupil.setAttribute('fill', '#000000');
+
+    svg.appendChild(outer);
+    svg.appendChild(iris);
+    svg.appendChild(pupil);
+    wrapper.appendChild(svg);
+    layer.appendChild(wrapper);
+  }
+};
+
+/**
+ * 段落配列をホラー強調トークン付きのDOM要素として構築する
+ * @param {HTMLElement} container
+ * @param {readonly string[]} paragraphs
+ */
+const renderTokenizedParagraphs = (container, paragraphs) => {
+  container.innerHTML = '';
+  for (const paraText of paragraphs) {
+    const p = document.createElement('p');
+    const tokens = tokenizeHorrorText(paraText);
+    for (const token of tokens) {
+      if (token.kind === 'crimson') {
+        const span = document.createElement('span');
+        span.className = 'token-crimson';
+        span.textContent = token.text;
+        p.appendChild(span);
+      } else if (token.kind === 'salvage') {
+        const span = document.createElement('span');
+        span.className = 'token-salvage';
+        span.textContent = token.text;
+        p.appendChild(span);
+      } else {
+        p.appendChild(document.createTextNode(token.text));
+      }
+    }
+    container.appendChild(p);
+  }
+};
+
+/**
  * 手紙とプレイ記録をテキストファイルとしてダウンロードする
  * @param {AppState} state
  * @param {Date} now
@@ -169,11 +484,11 @@ const downloadPlayRecord = (state, now) => {
     return;
   }
   const timestamp = formatFileTimestamp(now);
-  const fileName = `story_letter_${timestamp}.txt`;
+  const fileName = `silent_classroom_record_${timestamp}.txt`;
   const logsText = state.actionLogs
     .map(
       (log) =>
-        `【第${log.chapterNumber}部: ${log.chapterTitle}】\n` +
+        `【第${log.chapterNumber}幕: ${log.chapterTitle}】\n` +
         `あなたの言葉: ${log.playerInput}\n` +
         `反応: ${log.aiReaction}\n`
     )
@@ -181,19 +496,19 @@ const downloadPlayRecord = (state, now) => {
 
   const content = [
     '====================================================',
-    '🌿 静寂の教室と、ふたりの呼吸 — プレイ記録＆手紙',
+    '👁️ SILENT CLASSROOM — 静寂の教室と、ふたりの呼吸',
     '====================================================',
-    `プレイヤー名: ${state.answers.playerName}`,
-    `プレイしたルート: ${state.blueprint.routeTitle}`,
+    `被験者名: ${state.answers.playerName}`,
+    `シナリオ: ${state.blueprint.routeTitle}`,
     `到達エンディング: ${state.currentEnding.badge}『${state.currentEnding.title}』`,
     '',
     '----------------------------------------------------',
-    '💌 朝霧 陽菜（A）からの手紙',
+    '💌 朝霧 陽菜（A）からの手紙・記録',
     '----------------------------------------------------',
     state.personalLetter,
     '',
     '----------------------------------------------------',
-    '📖 あなたが歩んだ5つの選択と対話の軌跡',
+    '📖 あなたが辿った全5幕の選択と対話の記録',
     '----------------------------------------------------',
     logsText,
   ].join('\n');
@@ -277,7 +592,11 @@ const renderRadioCards = ({
  * アプリケーションの初期化とイベント登録
  */
 const initApp = () => {
+  const soundEngine = createHorrorSoundEngine();
+
+  const gazeEyesLayer = getRequiredElement('gaze-eyes-layer', HTMLElement);
   const aiStatusPill = getRequiredElement('ai-status-pill', HTMLElement);
+  const soundToggleBtn = getRequiredElement('sound-toggle-btn', HTMLButtonElement);
   const aiNoticeBanner = getRequiredElement('ai-notice-banner', HTMLElement);
 
   // Sections
@@ -322,9 +641,14 @@ const initApp = () => {
   const switchRouteABtn = getRequiredElement('switch-route-a-btn', HTMLButtonElement);
   const startStoryBtn = getRequiredElement('start-story-btn', HTMLButtonElement);
 
-  // Story elements
+  // Story HUD & elements
+  const hudBpmValue = getRequiredElement('hud-bpm-value', HTMLElement);
+  const hudSilenceValue = getRequiredElement('hud-silence-value', HTMLElement);
+  const hudSilenceFill = getRequiredElement('hud-silence-fill', HTMLElement);
+  const hudGazeStatus = getRequiredElement('hud-gaze-status', HTMLElement);
   const chapterPartBadge = getRequiredElement('chapter-part-badge', HTMLElement);
   const chapterLocationBadge = getRequiredElement('chapter-location-badge', HTMLElement);
+  const skipTypewriterBtn = getRequiredElement('skip-typewriter-btn', HTMLButtonElement);
   const aiRewriteCheckbox = getRequiredElement('ai-rewrite-checkbox', HTMLInputElement);
   const abortToDiagnosisBtn = getRequiredElement('abort-to-diagnosis-btn', HTMLButtonElement);
   const chapterProgressFill = getRequiredElement('chapter-progress-fill', HTMLElement);
@@ -350,12 +674,14 @@ const initApp = () => {
   const nextChapterBtn = getRequiredElement('next-chapter-btn', HTMLButtonElement);
 
   // Ending elements
+  const endingHeroBox = getRequiredElement('ending-hero-box', HTMLElement);
   const endingBadge = getRequiredElement('ending-badge', HTMLElement);
   const endingCategory = getRequiredElement('ending-category', HTMLElement);
   const endingTitle = getRequiredElement('ending-title', HTMLElement);
   const endingSubtitle = getRequiredElement('ending-subtitle', HTMLElement);
   const endingParagraphs = getRequiredElement('ending-paragraphs', HTMLElement);
   const endingReflection = getRequiredElement('ending-reflection', HTMLElement);
+  const letterHeadingTitle = getRequiredElement('letter-heading-title', HTMLElement);
   const letterLoading = getRequiredElement('letter-loading', HTMLElement);
   const letterContent = getRequiredElement('letter-content', HTMLElement);
   const downloadLetterBtn = getRequiredElement('download-letter-btn', HTMLButtonElement);
@@ -365,6 +691,68 @@ const initApp = () => {
   const restartFromDiagnosisBtn = getRequiredElement('restart-from-diagnosis-btn', HTMLButtonElement);
 
   let state = createInitialState();
+  /** @type {ReturnType<typeof setInterval> | null} */
+  let typewriterTimer = null;
+  let lastTypedChapterKey = '';
+
+  const clearTypewriter = () => {
+    if (typewriterTimer !== null) {
+      clearInterval(typewriterTimer);
+      typewriterTimer = null;
+    }
+  };
+
+  /**
+   * 現在の章の全文を即時表示する（タイプライタースキップ）
+   */
+  const completeTypewriterImmediately = () => {
+    clearTypewriter();
+    if (state.phase === 'story' && state.chapters.length > 0) {
+      const currentChapter = state.chapters[state.currentChapterIndex];
+      renderTokenizedParagraphs(chapterParagraphs, currentChapter.paragraphs);
+    }
+  };
+
+  /**
+   * サウンドノベル風のタイプライター文字送りを開始する
+   * @param {readonly string[]} paragraphs
+   * @param {string} chapterKey
+   */
+  const startTypewriterEffect = (paragraphs, chapterKey) => {
+    if (lastTypedChapterKey === chapterKey) {
+      renderTokenizedParagraphs(chapterParagraphs, paragraphs);
+      return;
+    }
+    lastTypedChapterKey = chapterKey;
+    clearTypewriter();
+
+    chapterParagraphs.innerHTML = '';
+    const pElements = paragraphs.map(() => {
+      const p = document.createElement('p');
+      chapterParagraphs.appendChild(p);
+      return p;
+    });
+
+    let pIdx = 0;
+    let charIdx = 0;
+
+    typewriterTimer = setInterval(() => {
+      if (pIdx >= paragraphs.length) {
+        completeTypewriterImmediately();
+        return;
+      }
+      const currentFullText = paragraphs[pIdx];
+      charIdx += 2;
+      pElements[pIdx].textContent = currentFullText.slice(0, charIdx);
+      if (charIdx % 6 === 0) {
+        soundEngine.playTypeBlip();
+      }
+      if (charIdx >= currentFullText.length) {
+        pIdx += 1;
+        charIdx = 0;
+      }
+    }, 24);
+  };
 
   /**
    * 事前診断フォームのラジオ選択肢群を再描画する
@@ -376,7 +764,6 @@ const initApp = () => {
       optionsMap: EXPERIENCE_OPTIONS,
       selectedKey: state.answers.experience,
       onSelect: (val) => {
-        // IBS当事者を選んだ場合はデフォルトで当事者Aルートまたは親友ルートを提案しやすくする
         const nextRel =
           val === 'ibs_patient' ? 'self_protagonist' : state.answers.relationship;
         state = updateState(state, {
@@ -457,7 +844,7 @@ const initApp = () => {
     const targetChapter = state.chapters[chapterIndex];
     state = updateState(state, {
       isLoading: true,
-      loadingText: `AIがあなたの診断プロファイルに合わせて${targetChapter.partLabel}の描写を最適化しています...`,
+      loadingText: `AIがあなたの恐怖プロファイルに合わせて${targetChapter.partLabel}の脚本を生成しています...`,
     });
     render();
 
@@ -487,6 +874,7 @@ const initApp = () => {
             })
           : ch
       );
+      lastTypedChapterKey = '';
       state = updateState(state, {
         chapters: Object.freeze(updatedChapters),
         isLoading: false,
@@ -511,6 +899,14 @@ const initApp = () => {
     if (state.blueprint === null || state.isLoading) {
       return;
     }
+    completeTypewriterImmediately();
+
+    if (effect.assumptionDelta >= 3 || effect.trustDelta < 0) {
+      soundEngine.playHorrorStinger();
+    } else if (effect.empathyDelta >= 4) {
+      soundEngine.playSalvationChime();
+    }
+
     const currentChapter = state.chapters[state.currentChapterIndex];
     const updatedMetrics = applyChoiceEffect(state.metrics, effect, isFreeTalk);
 
@@ -518,7 +914,7 @@ const initApp = () => {
       metrics: updatedMetrics,
       lastPlayerInput: playerInputText,
       isLoading: true,
-      loadingText: '陽菜の反応と物語の展開を生成しています...',
+      loadingText: '教室の反応と陽菜の声を呼び出しています...',
     });
     render();
 
@@ -579,8 +975,21 @@ const initApp = () => {
     if (state.blueprint === null) {
       return;
     }
+    clearTypewriter();
     const ending = determineEnding(state.blueprint, state.metrics);
     const unlockedSet = new Set([...state.unlockedEndings, ending.id]);
+
+    if (ending.isHorrorBadEnd) {
+      soundEngine.playHorrorStinger();
+      soundEngine.startAmbientLoop(ending.endingBpm, 'clock_panic');
+      renderGazeEyes(gazeEyesLayer, 22);
+      document.body.setAttribute('data-mood', 'horror_bad');
+    } else {
+      soundEngine.playSalvationChime();
+      soundEngine.stopAmbientLoop();
+      renderGazeEyes(gazeEyesLayer, 0);
+      document.body.setAttribute('data-mood', ending.id === 'bitter_distance' ? 'emotional' : 'hope');
+    }
 
     state = updateState(state, {
       phase: 'ending',
@@ -589,7 +998,6 @@ const initApp = () => {
       unlockedEndings: Object.freeze([...unlockedSet]),
       isLoading: state.hasApiKey,
     });
-    document.body.setAttribute('data-mood', ending.id.startsWith('bad_') ? 'tense' : 'hope');
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -621,11 +1029,14 @@ const initApp = () => {
    * 現在の状態からUI全体を描画する
    */
   const render = () => {
-    // ステータスピル
     aiStatusPill.textContent = state.hasApiKey
-      ? '✨ Gemini AI フルパーソナライズ稼働中'
-      : '🌱 内蔵パーソナライズエンジン稼働中';
+      ? '✨ Gemini AI 深層ホラー＆救済エンジン稼働中'
+      : '🕯️ 内蔵パーソナライズエンジン稼働中';
     aiStatusPill.classList.toggle('ai-active', state.hasApiKey);
+
+    soundToggleBtn.textContent = state.soundEnabled
+      ? '🔊 ホラー音響: ON'
+      : '🔇 ホラー音響: OFF';
 
     const hasNotice =
       typeof state.aiNoticeMessage === 'string' && state.aiNoticeMessage.length > 0;
@@ -633,7 +1044,6 @@ const initApp = () => {
     aiNoticeBanner.style.whiteSpace = 'pre-wrap';
     aiNoticeBanner.textContent = state.aiNoticeMessage ?? '';
 
-    // セクションの表示切り替え
     setupSection.classList.toggle('hidden', state.phase !== 'setup');
     diagnosisSection.classList.toggle('hidden', state.phase !== 'diagnosis');
     blueprintSection.classList.toggle('hidden', state.phase !== 'blueprint');
@@ -642,12 +1052,18 @@ const initApp = () => {
 
     apiKeyError.classList.toggle('hidden', !state.showApiKeyError);
 
-    // Blueprint画面の描画
+    if (state.phase === 'setup' || state.phase === 'diagnosis' || state.phase === 'blueprint') {
+      soundEngine.stopAmbientLoop();
+      renderGazeEyes(gazeEyesLayer, state.phase === 'setup' ? 4 : 2);
+      document.body.setAttribute('data-mood', 'tense');
+    }
+
+    // Blueprint画面
     if (state.phase === 'blueprint' && state.blueprint !== null) {
       blueprintLoading.classList.toggle('hidden', !state.isLoading);
       bpRouteBadge.textContent = state.blueprint.isPatientRoute
-        ? '💚 IBS当事者・深掘り救済ルート'
-        : '🤝 非当事者・マルチエンディングルート';
+        ? '🕯️ IBS当事者・密室からの救済生還ルート'
+        : '👁️ 非当事者・マルチホラー＆生還分岐ルート';
       bpRouteTitle.textContent = state.blueprint.routeTitle;
       bpRouteSubtitle.textContent = state.blueprint.routeSubtitle;
       bpRoleValue.textContent = state.blueprint.playerRoleLabel;
@@ -659,7 +1075,7 @@ const initApp = () => {
       startStoryBtn.disabled = state.isLoading;
     }
 
-    // Story本編の描画
+    // Story本編
     if (
       state.phase === 'story' &&
       state.blueprint !== null &&
@@ -667,6 +1083,32 @@ const initApp = () => {
     ) {
       const currentChapter = state.chapters[state.currentChapterIndex];
       document.body.setAttribute('data-mood', currentChapter.moodTheme);
+
+      const dynamicBpm = calculateDynamicBpm(currentChapter.baseBpm, state.metrics);
+      const isHighPanic = dynamicBpm >= 115 || currentChapter.silenceLevel >= 80;
+
+      hudBpmValue.textContent = String(dynamicBpm);
+      hudBpmValue.classList.toggle('bpm-danger', isHighPanic);
+
+      hudSilenceValue.textContent = `${currentChapter.silenceLevel}%`;
+      hudSilenceFill.style.width = `${currentChapter.silenceLevel}%`;
+
+      const totalGazeEyes =
+        currentChapter.gazeEyesCount + Math.max(0, state.metrics.assumption * 2);
+      renderGazeEyes(gazeEyesLayer, totalGazeEyes);
+
+      if (totalGazeEyes >= 12) {
+        hudGazeStatus.textContent = 'CRITICAL // 無数の視線と嘲笑';
+        hudGazeStatus.classList.add('gaze-danger');
+      } else if (totalGazeEyes >= 4) {
+        hudGazeStatus.textContent = 'WATCHED // 周囲の視線';
+        hudGazeStatus.classList.remove('gaze-danger');
+      } else {
+        hudGazeStatus.textContent = 'SAFE // 理解者の存在';
+        hudGazeStatus.classList.remove('gaze-danger');
+      }
+
+      soundEngine.startAmbientLoop(dynamicBpm, currentChapter.soundPreset);
 
       chapterPartBadge.textContent = currentChapter.partLabel;
       chapterLocationBadge.textContent = `📍 ${currentChapter.locationLabel}`;
@@ -688,11 +1130,9 @@ const initApp = () => {
       storyLoading.classList.toggle('hidden', !state.isLoading);
       storyLoadingText.textContent = state.loadingText;
 
-      chapterParagraphs.innerHTML = '';
-      for (const text of currentChapter.paragraphs) {
-        const p = document.createElement('p');
-        p.textContent = text;
-        chapterParagraphs.appendChild(p);
+      const chapterKey = `${state.blueprint.routeId}_${currentChapter.chapterNumber}_${currentChapter.paragraphs[0].slice(0, 15)}`;
+      if (!state.isLoading) {
+        startTypewriterEffect(currentChapter.paragraphs, chapterKey);
       }
 
       chapterMonologue.textContent = currentChapter.innerMonologue;
@@ -736,27 +1176,26 @@ const initApp = () => {
         const isLastChapter =
           state.currentChapterIndex >= state.chapters.length - 1;
         nextChapterBtn.textContent = isLastChapter
-          ? '✨ エンディングと陽菜からの手紙を見る ➔'
-          : `次の部（第${state.currentChapterIndex + 2}部）へ進む ➔`;
+          ? '👁️ 最終結末（エンディング）を見届ける ➔'
+          : `次の幕（第${state.currentChapterIndex + 2}幕）へ進む ➔`;
       }
     }
 
-    // Ending画面の描画
+    // Ending画面
     if (state.phase === 'ending' && state.currentEnding !== null) {
       const ending = state.currentEnding;
+      endingHeroBox.classList.toggle('horror-bad-hero', ending.isHorrorBadEnd);
       endingBadge.textContent = ending.badge;
       endingCategory.textContent = ending.category;
       endingTitle.textContent = ending.title;
       endingSubtitle.textContent = ending.subtitle;
 
-      endingParagraphs.innerHTML = '';
-      for (const pText of ending.paragraphs) {
-        const p = document.createElement('p');
-        p.textContent = pText;
-        endingParagraphs.appendChild(p);
-      }
+      renderTokenizedParagraphs(endingParagraphs, ending.paragraphs);
 
       endingReflection.textContent = ending.reflectionNote;
+      letterHeadingTitle.textContent = ending.isHorrorBadEnd
+        ? '🩸 残された未送信メモ・破られた記録'
+        : '💌 朝霧 陽菜（A）からあなたへ届いた手紙';
       letterLoading.classList.toggle('hidden', !state.isLoading);
       letterContent.textContent = state.personalLetter;
 
@@ -788,7 +1227,7 @@ const initApp = () => {
         badgeSpan.textContent = unlocked ? `${item.badge}` : `🔒 ${item.badge}`;
         const titleP = document.createElement('p');
         titleP.style.margin = '0.2rem 0 0';
-        titleP.textContent = unlocked ? `『${item.title}』` : '（未到達のエンディング）';
+        titleP.textContent = unlocked ? `『${item.title}』` : '（未到達の結末）';
         card.append(badgeSpan, titleP);
         endingCollectionGrid.appendChild(card);
       }
@@ -852,6 +1291,21 @@ const initApp = () => {
   // =========================================================================
   // イベントリスナー登録
   // =========================================================================
+
+  soundToggleBtn.addEventListener('click', () => {
+    const nextSound = !state.soundEnabled;
+    soundEngine.setSoundEnabled(nextSound);
+    state = updateState(state, { soundEnabled: nextSound });
+    render();
+  });
+
+  skipTypewriterBtn.addEventListener('click', () => {
+    completeTypewriterImmediately();
+  });
+
+  chapterParagraphs.addEventListener('click', () => {
+    completeTypewriterImmediately();
+  });
 
   toggleApiKeyBtn.addEventListener('click', () => {
     apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
@@ -934,6 +1388,7 @@ const initApp = () => {
     if (state.blueprint === null) {
       return;
     }
+    lastTypedChapterKey = '';
     const freshChapters = buildPersonalizedChapters(state.answers, state.blueprint);
     state = updateState(state, {
       phase: 'story',
@@ -952,8 +1407,9 @@ const initApp = () => {
   });
 
   abortToDiagnosisBtn.addEventListener('click', () => {
+    clearTypewriter();
+    soundEngine.stopAmbientLoop();
     state = updateState(state, { phase: 'blueprint', isLoading: false });
-    document.body.setAttribute('data-mood', 'warm');
     render();
   });
 
@@ -977,6 +1433,7 @@ const initApp = () => {
       void transitionToEnding();
       return;
     }
+    lastTypedChapterKey = '';
     state = updateState(state, {
       currentChapterIndex: nextIdx,
       awaitingNextChapter: false,
@@ -994,6 +1451,7 @@ const initApp = () => {
     if (state.blueprint === null) {
       return;
     }
+    lastTypedChapterKey = '';
     const freshChapters = buildPersonalizedChapters(state.answers, state.blueprint);
     state = updateState(state, {
       phase: 'story',
@@ -1012,12 +1470,13 @@ const initApp = () => {
   });
 
   restartFromDiagnosisBtn.addEventListener('click', () => {
+    clearTypewriter();
+    soundEngine.stopAmbientLoop();
     state = updateState(state, {
       phase: 'diagnosis',
       awaitingNextChapter: false,
       currentEnding: null,
     });
-    document.body.setAttribute('data-mood', 'warm');
     renderDiagnosisOptions();
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });

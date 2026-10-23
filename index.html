@@ -3,40 +3,52 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>静寂の教室と、ふたりの呼吸 | AI事前診断パーソナライズ・ノベル</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌿</text></svg>" />
+  <title>SILENT CLASSROOM — 静寂の教室と、ふたりの呼吸 | 心理ホラー×AI事前診断ノベル</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👁️</text></svg>" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
-<body data-mood="warm">
+<body data-mood="tense">
+  <!-- ホラー演出オーバーレイ群 -->
+  <div id="crt-scanlines" class="crt-scanlines" aria-hidden="true"></div>
+  <div id="vignette-overlay" class="vignette-overlay" aria-hidden="true"></div>
+  <div id="gaze-eyes-layer" class="gaze-eyes-layer" aria-hidden="true"></div>
+
   <main class="app-container">
-    <!-- ヘッダー -->
+    <!-- トップシステムバー -->
     <header class="app-header">
       <div class="brand-row">
-        <span class="brand-badge">Interactive Empathy Novel</span>
-        <span id="ai-status-pill" class="status-pill">内蔵パーソナライズモード</span>
+        <div class="brand-left">
+          <span class="brand-badge">PSYCHOLOGICAL HORROR &amp; EMPATHY NOVEL</span>
+          <span id="ai-status-pill" class="status-pill">内蔵パーソナライズモード</span>
+        </div>
+        <button type="button" id="sound-toggle-btn" class="btn btn-secondary btn-sm sound-btn">
+          🔊 ホラー音響: ON
+        </button>
       </div>
-      <h1 class="app-title">🌿 静寂の教室と、ふたりの呼吸</h1>
-      <p class="app-subtitle">事前診断によって、あなたの心に最も刺さる物語へと変化する対話型ストーリー</p>
+      <h1 class="app-title" data-text="静寂の教室と、ふたりの呼吸">静寂の教室と、ふたりの呼吸</h1>
+      <p class="app-subtitle">— SILENT CLASSROOM : 事前診断によって悪夢の形と結末が変わる対話型サイコロジカルノベル —</p>
     </header>
 
     <!-- AI通信エラー・フォールバック通知バナー -->
     <div id="ai-notice-banner" class="alert alert-error hidden" role="alert"></div>
 
-    <!-- 1. スタート＆APIキー設定セクション -->
-    <section id="setup-section" class="section-card">
+    <!-- 1. タイトル＆APIキー設定セクション -->
+    <section id="setup-section" class="section-card horror-frame">
       <div class="intro-hero">
-        <h2>✨ あなただけの物語を始める前に</h2>
+        <div class="horror-warning-tag">⚠️ WARNING : CLAUSTROPHOBIA &amp; GAZE SIMULATION</div>
+        <h2>チャイムが鳴り、扉が閉まる。そこは音を立ててはいけない密室だった。</h2>
         <p>
-          同じ教室にいても、見えている景色や抱えている痛みは一人ひとり違います。<br />
-          このアプリでは、プレイ前の<strong>「事前診断」</strong>によって、あなたの経験・一番緊張する場面・性格の傾向を分析し、<strong>主人公の視点、クライシスの舞台、心の声（モノローグ）、そして物語の展開そのもの</strong>をあなた専用に最適化します。
+          静まり返った5限目の教室。時計の秒針の音。突然襲いかかる腹痛と、お腹の奥で膨れ上がる不穏な音。<br />
+          <strong>「もし今、音が鳴ってオナラだと誤解されたら——」</strong><br />
+          このゲームでは、プレイ前の<strong>『トラウマ・閉所恐怖プロファイリング（事前診断）』</strong>によって、あなたが最も恐怖を感じる密室・症状・心理状態に合わせてストーリーそのものが変化します。
         </p>
       </div>
 
       <div class="alert alert-info">
         <strong>🔑 Google Gemini APIキー設定（任意・推奨）</strong>
         <p class="small-note">
-          APIキーを設定すると、事前診断の深掘り分析・各章のAIリアルタイム脚本アレンジ・登場人物との自由対話・エンディング後の『あなた専用の手紙』がフル機能で動作します。<br />
-          ※APIキーがない場合も、<strong>内蔵パーソナライズエンジン</strong>ですべてのルートと全8種のマルチエンディングを最後までプレイできます。
+          APIキーを設定すると、事前診断による深層心理分析・各幕のAIリアルタイム脚本アレンジ・登場人物との自由対話・エンディング後の『陽菜からの手紙（または残された記録）』がフル機能で動作します。<br />
+          ※APIキー未設定でも、<strong>内蔵パーソナライズエンジン</strong>で全ルート・全8種のマルチエンディングを最後までプレイ可能です。
         </p>
       </div>
 
@@ -70,15 +82,15 @@
         </div>
 
         <div id="api-key-error" class="alert alert-error hidden" role="alert">
-          APIキーを入力するか、「APIキーなしで事前診断へ進む」を選択してください。
+          APIキーを入力するか、「APIキーなしでプロファイリングへ進む」を選択してください。
         </div>
 
         <div class="grid-2">
           <button type="submit" class="btn btn-primary">
-            ✨ APIキーを設定して事前診断へ
+            🩸 APIキーを設定して診断を開始
           </button>
           <button type="button" id="start-offline-btn" class="btn btn-secondary">
-            🌱 APIキーなしで事前診断へ進む
+            🕯️ APIキーなしで診断を開始
           </button>
         </div>
       </form>
@@ -87,39 +99,39 @@
 
       <div class="route-overview-grid">
         <div class="overview-item">
-          <span class="overview-icon">💚</span>
-          <h3>IBS当事者・経験者の方へ</h3>
-          <p>登場人物A（朝霧陽菜）の内面を深掘りし、孤独な闘いの末に必ず救われる専用カタルシスルートへ導きます。</p>
+          <span class="overview-icon">🕯️</span>
+          <h3>IBS当事者・経験者の方へ（救済生還ルート）</h3>
+          <p>登場人物A（朝霧陽菜）自身の視点で、孤独な暗闇と家族の無理解を乗り越え、必ず「夜明けの救済」へと生還する専用ストーリーを体験できます。</p>
         </div>
         <div class="overview-item">
-          <span class="overview-icon">🤝</span>
-          <h3>非当事者・周囲の視点の方へ</h3>
-          <p>親友視点（Version.1）やクラスメイト視点（Version.2）をベースに、あなたの選択とAI対話でトゥルーエンドからバッドエンドまで多彩に分岐します。</p>
+          <span class="overview-icon">👁️</span>
+          <h3>非当事者・周囲の視点の方へ（マルチホラー分岐）</h3>
+          <p>親友視点（Version.1）やクラスメイト視点（Version.2）から始まり、選択やAI対話を誤れば本格的なホラーバッドエンドへ、真の理解へ至れば感動の生還エンドへ分岐します。</p>
         </div>
       </div>
     </section>
 
-    <!-- 2. 事前診断セクション -->
-    <section id="diagnosis-section" class="section-card hidden">
+    <!-- 2. 事前診断（トラウマ・閉所恐怖プロファイリング）セクション -->
+    <section id="diagnosis-section" class="section-card horror-frame hidden">
       <div class="section-topbar">
         <div>
-          <span class="step-label">STEP 1 / 3 : PRE-DIAGNOSIS</span>
-          <h2 class="section-heading">🧭 プレイヤー事前診断（ストーリー最適化）</h2>
+          <span class="step-label">FILE 01 // PRE-PLAY TRAUMA PROFILING</span>
+          <h2 class="section-heading">📋 事前診断：閉所・視線トラウマカルテ</h2>
         </div>
         <button type="button" id="back-to-setup-btn" class="btn btn-secondary btn-sm">
-          ⚙️ API設定へ戻る
+          ⚙️ タイトルへ戻る
         </button>
       </div>
 
       <p class="caption-text">
-        あなたの回答によって、物語の舞台・主人公の心境・発症シーン・陽菜（A）との関係性が変化します。直感でお答えください。
+        以下の質問への回答によって、あなたを襲う「密室の舞台」「恐怖の種類」「脳内ノイズ（モノローグ）」「物語の展開」が決定されます。
       </p>
 
       <form id="diagnosis-form" class="diagnosis-form">
         <!-- 名前 -->
         <div class="question-card">
           <label for="player-name-input" class="question-title">
-            Q0. 物語の中で呼ばれたい名前（主人公Bの名前）
+            CODE 00. 被験者名（物語内の主人公Bの名前）
           </label>
           <input
             id="player-name-input"
@@ -129,21 +141,21 @@
             maxlength="20"
             placeholder="例: 結城 蓮"
           />
-          <span class="help-text">※当事者A本人ルートの場合は、親友の名前として登場します。</span>
+          <span class="help-text">※当事者A本人ルートの場合は、あなたの唯一の親友の名前として記録されます。</span>
         </div>
 
         <!-- Q1: 当事者性・経験 -->
         <fieldset class="question-card">
           <legend class="question-title">
-            Q1. お腹の不調（IBSなど）や、外からは見えない体調の悩みについての経験は？
+            CODE 01. お腹の不調（IBSなど）や、外からは見えない身体の異変についての記憶は？
           </legend>
           <div id="q-experience-options" class="radio-card-list"></div>
         </fieldset>
 
-        <!-- Q2: 緊張するシチュエーション（舞台の変更） -->
+        <!-- Q2: 緊張するシチュエーション（密室舞台の変更） -->
         <fieldset class="question-card">
           <legend class="question-title">
-            Q2. 「今ここでお腹が痛くなったり音が鳴ったりしたら逃げられない」と一番リアルに緊張を感じる場面は？
+            CODE 02. 「今ここで身体が悲鳴を上げたら絶対に逃げられない」と最も恐怖を感じる密室は？
           </legend>
           <div id="q-scene-options" class="radio-card-list"></div>
         </fieldset>
@@ -151,7 +163,7 @@
         <!-- Q3: 最も怖い要素（クライシス描写の変更） -->
         <fieldset class="question-card">
           <legend class="question-title">
-            Q3. もし静かな場所で体調が崩れたら、一番つらい・怖いと感じることは？
+            CODE 03. 静まり返った空間で体調が崩れたとき、あなたを最も追い詰める恐怖は？
           </legend>
           <div id="q-fear-options" class="radio-card-list"></div>
         </fieldset>
@@ -159,7 +171,7 @@
         <!-- Q4: 陽菜（A）との関係性・視点 -->
         <fieldset class="question-card">
           <legend class="question-title">
-            Q4. どの視点・関係性からこの物語を体験したいですか？
+            CODE 04. どの立場からこの教室の出来事を目撃・体験しますか？
           </legend>
           <div id="q-relationship-options" class="radio-card-list"></div>
         </fieldset>
@@ -167,7 +179,7 @@
         <!-- Q5: 心のクセ（モノローグの同期） -->
         <fieldset class="question-card">
           <legend class="question-title">
-            Q5. 苦しい時や迷った時、自分が一番やりがちな「心のクセ」は？
+            CODE 05. 絶体絶命の緊張に追い詰められたとき、あなたの脳内が取る防衛反応は？
           </legend>
           <div id="q-coping-options" class="radio-card-list"></div>
         </fieldset>
@@ -175,66 +187,66 @@
         <!-- Q6: 自由記述（AIパーソナライズ対話） -->
         <div class="question-card">
           <label for="free-comment-input" class="question-title">
-            Q6. 【任意・AI深掘り】これまでに「本当はつらかったけれど言えなかったこと」や「教室の空気でモヤモヤしたこと」があれば自由に書いてください
+            CODE 06. 【任意・深層記録】これまでに「静かな場所で恐怖を感じた記憶」や「誰にも言えなかった痛み」があれば記述してください
           </label>
           <textarea
             id="free-comment-input"
             class="textarea-input"
             rows="3"
-            placeholder="例: テスト中にお腹が鳴るのが怖くて朝ごはんを抜いていたことがある / 友達が保健室によく行く理由を聞けなかった など（空欄でもOK）"
+            placeholder="例: 授業中にお腹が鳴るのが怖くて息を止めていた / テスト中に席を立つ人を不思議な目で見ていた など（空欄でも可）"
           ></textarea>
         </div>
 
         <button type="submit" id="submit-diagnosis-btn" class="btn btn-primary btn-lg">
-          🔮 診断してあなた専用のストーリーを生成する
+          👁️ カルテを確定し、あなた専用の物語を生成する
         </button>
       </form>
     </section>
 
-    <!-- 3. 診断結果＆ストーリー設計図プレビューセクション -->
-    <section id="blueprint-section" class="section-card hidden">
+    <!-- 3. 診断結果＆ストーリー設計図（CASE FILE）プレビューセクション -->
+    <section id="blueprint-section" class="section-card horror-frame hidden">
       <div class="section-topbar">
         <div>
-          <span class="step-label">STEP 2 / 3 : PERSONALIZED BLUEPRINT</span>
-          <h2 class="section-heading">✨ あなた専用に構築されたストーリー設計図</h2>
+          <span class="step-label">FILE 02 // PERSONALIZED NIGHTMARE &amp; SALVATION FILE</span>
+          <h2 class="section-heading">📂 診断完了：生成されたケースファイル</h2>
         </div>
         <button type="button" id="redo-diagnosis-btn" class="btn btn-secondary btn-sm">
-          ↩️ 診断をやり直す
+          ↩️ カルテを書き直す
         </button>
       </div>
 
       <div id="blueprint-loading" class="loading-indicator hidden" role="status">
         <span class="spinner" aria-hidden="true"></span>
-        <span>AIがあなたの診断結果から専用プロローグを紡いでいます...</span>
+        <span>AIがあなたの恐怖プロファイルから導入シナリオを生成しています...</span>
       </div>
 
       <div class="blueprint-hero">
-        <span id="bp-route-badge" class="route-badge">最適ルート</span>
+        <span id="bp-route-badge" class="route-badge">SELECTED ROUTE</span>
         <h3 id="bp-route-title" class="bp-title"></h3>
         <p id="bp-route-subtitle" class="bp-subtitle"></p>
       </div>
 
       <div class="blueprint-specs-grid">
         <div class="spec-box">
-          <span class="spec-label">👤 あなたの視点・役柄</span>
+          <span class="spec-label">👤 被験者視点（ROLE）</span>
           <strong id="bp-role-value" class="spec-value"></strong>
         </div>
         <div class="spec-box">
-          <span class="spec-label">🏫 カスタムされた舞台</span>
+          <span class="spec-label">🚪 設定された密室（STAGE）</span>
           <strong id="bp-scene-value" class="spec-value"></strong>
         </div>
         <div class="spec-box">
-          <span class="spec-label">💭 物語の核心テーマ</span>
+          <span class="spec-label">👁️ 恐怖の核心（CORE FEAR）</span>
           <strong id="bp-fear-value" class="spec-value"></strong>
         </div>
         <div class="spec-box">
-          <span class="spec-label">🪞 同期された心のクセ</span>
+          <span class="spec-label">🧠 脳内防衛反応（MINDSET）</span>
           <strong id="bp-coping-value" class="spec-value"></strong>
         </div>
       </div>
 
       <div class="prologue-card">
-        <h4>📖 あなたへの診断メッセージ＆専用プロローグ</h4>
+        <h4>📜 プロファイリング解析＆序章テキスト</h4>
         <p id="bp-diagnosis-summary" class="prologue-text"></p>
         <hr class="divider" />
         <p id="bp-custom-prologue" class="prologue-highlight"></p>
@@ -242,70 +254,110 @@
 
       <!-- 手動ルート変更オプション -->
       <details class="expander">
-        <summary class="expander-summary">🔄 別のシナリオ視点に切り替えてプレイしたい場合はこちら</summary>
+        <summary class="expander-summary">🔄 別のシナリオ視点に切り替えて体験したい場合はこちら</summary>
         <div class="expander-body">
           <p class="caption-text">
-            事前診断の舞台設定や性格設定を保ったまま、ベースとなるシナリオ骨格を切り替えることもできます。
+            事前診断で設定した密室舞台や恐怖の核心を維持したまま、シナリオの視点を変更できます。
           </p>
           <div class="grid-3">
             <button type="button" id="switch-route-v1-btn" class="btn btn-secondary">
-              🤝 Version.1（親友視点）
+              🩸 Version.1（親友視点）
             </button>
             <button type="button" id="switch-route-v2-btn" class="btn btn-secondary">
-              👀 Version.2（クラスメイト視点）
+              👁️ Version.2（クラスメイト視点）
             </button>
             <button type="button" id="switch-route-a-btn" class="btn btn-secondary">
-              💚 特別編（当事者A救済視点）
+              🕯️ 特別編（当事者A救済視点）
             </button>
           </div>
         </div>
       </details>
 
       <button type="button" id="start-story-btn" class="btn btn-primary btn-lg">
-        ▶️ このストーリーで物語を始める（第一部へ）
+        🚪 教室の扉を開ける（第一幕を開始）
       </button>
     </section>
 
-    <!-- 4. ストーリー本編セクション -->
-    <section id="story-section" class="section-card hidden">
-      <!-- ステータス＆進行バー -->
+    <!-- 4. ストーリー本編（ホラーサウンドノベル筐体）セクション -->
+    <section id="story-section" class="section-card horror-frame hidden">
+      <!-- ホラーゲーム・バイタル＆静寂モニターHUD -->
+      <div class="horror-hud-panel">
+        <div class="hud-vital-box">
+          <div class="ecg-Readout">
+            <span class="hud-label">🫀 HEART RATE</span>
+            <div class="bpm-row">
+              <strong id="hud-bpm-value" class="bpm-number">72</strong>
+              <span class="bpm-unit">BPM</span>
+            </div>
+          </div>
+          <svg class="ecg-svg" viewBox="0 0 160 40" aria-hidden="true">
+            <polyline
+              id="ecg-polyline"
+              class="ecg-line"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              points="0,20 30,20 38,10 44,32 52,4 60,36 68,16 76,20 160,20"
+            />
+          </svg>
+        </div>
+
+        <div class="hud-silence-box">
+          <div class="hud-row-between">
+            <span class="hud-label">🔇 SILENCE PRESSURE（静寂圧迫度）</span>
+            <strong id="hud-silence-value" class="hud-percent">20%</strong>
+          </div>
+          <div class="silence-bar-track">
+            <div id="hud-silence-fill" class="silence-bar-fill" style="width: 20%"></div>
+          </div>
+          <div class="hud-row-between">
+            <span class="hud-label">👁️ SURROUNDING GAZE</span>
+            <span id="hud-gaze-status" class="gaze-status-tag">CALM</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 章メタ＆コントロール -->
       <div class="story-header-bar">
         <div class="chapter-meta">
-          <span id="chapter-part-badge" class="part-badge">第一部</span>
+          <span id="chapter-part-badge" class="part-badge">第一幕</span>
           <span id="chapter-location-badge" class="location-badge">📍 教室</span>
         </div>
         <div class="story-controls-row">
-          <label class="ai-rewrite-toggle" title="APIキー設定時、各章の本文もAIが事前診断に合わせてリアルタイム執筆します">
+          <button type="button" id="skip-typewriter-btn" class="btn btn-secondary btn-sm">
+            ⏭️ 全文表示
+          </button>
+          <label class="ai-rewrite-toggle" title="APIキー設定時、各幕の本文もAIが事前診断に合わせてリアルタイム執筆します">
             <input type="checkbox" id="ai-rewrite-checkbox" checked />
-            <span>✨ AI動的脚本アレンジ</span>
+            <span>✨ AI動的脚本</span>
           </label>
           <button type="button" id="abort-to-diagnosis-btn" class="btn btn-secondary btn-sm">
-            🔄 診断へ戻る
+            📂 カルテへ
           </button>
         </div>
       </div>
 
-      <!-- プログレスバー（全5部） -->
+      <!-- プログレスバー（全5幕） -->
       <div class="chapter-progress" aria-label="章の進行度">
         <div id="chapter-progress-fill" class="chapter-progress-fill" style="width: 20%"></div>
       </div>
 
-      <!-- パラメータ・インジケーター -->
+      <!-- 内部パラメータ・インジケーター -->
       <div class="metrics-bar">
         <div class="metric-chip">
-          <span>💗 共感・理解</span>
+          <span>🕯️ 共感・理解</span>
           <strong id="metric-empathy">0</strong>
         </div>
         <div class="metric-chip">
-          <span>🤝 陽菜との信頼</span>
+          <span>🤝 陽菜との絆</span>
           <strong id="metric-trust">0</strong>
         </div>
         <div class="metric-chip">
-          <span>🌱 一歩の勇気</span>
+          <span>🗝️ 脱出の勇気</span>
           <strong id="metric-courage">0</strong>
         </div>
-        <div id="metric-assumption-chip" class="metric-chip">
-          <span>⚠️ 決めつけ度</span>
+        <div id="metric-assumption-chip" class="metric-chip metric-danger">
+          <span>🩸 決めつけ汚染度</span>
           <strong id="metric-assumption">0</strong>
         </div>
       </div>
@@ -315,15 +367,20 @@
       <!-- AI脚本生成中ローディング -->
       <div id="story-loading" class="loading-indicator hidden" role="status">
         <span class="spinner" aria-hidden="true"></span>
-        <span id="story-loading-text">物語を紡いでいます...</span>
+        <span id="story-loading-text">暗闇の記録を呼び出しています...</span>
       </div>
 
-      <!-- 小説本文エリア -->
-      <article id="chapter-paragraphs" class="novel-body" aria-live="polite"></article>
+      <!-- サウンドノベル本文ウィンドウ（クリックで文字送りスキップ可） -->
+      <article
+        id="chapter-paragraphs"
+        class="novel-body sound-novel-window"
+        aria-live="polite"
+        title="クリックで文字送りを即時完了します"
+      ></article>
 
-      <!-- 主人公のモノローグ（事前診断同期） -->
+      <!-- 主人公の脳内ノイズ・モノローグ（事前診断同期） -->
       <aside class="monologue-box">
-        <span class="monologue-label">💭 心の声（事前診断パーソナライズ）</span>
+        <span class="monologue-label">🧠 INNER VOICE // 脳内モノローグ（事前診断同期）</span>
         <p id="chapter-monologue" class="monologue-text"></p>
       </aside>
 
@@ -335,8 +392,8 @@
 
         <div class="free-talk-card">
           <div class="free-talk-header">
-            <strong>💬 自分の言葉で話しかける・行動する（AI対話分岐）</strong>
-            <span class="caption-text">選択肢にない言葉も自由に入力できます。あなたの言葉次第で展開やエンディングが変化します。</span>
+            <strong>💬 自分の声を絞り出す（AIリアルタイム対話・行動入力）</strong>
+            <span class="caption-text">選択肢にない言葉も自由に入力できます。あなたの言葉が生還かバッドエンドかを左右します。</span>
           </div>
           <form id="free-talk-form" class="free-talk-form">
             <input
@@ -348,7 +405,7 @@
               required
             />
             <button type="submit" id="free-talk-submit-btn" class="btn btn-primary send-btn">
-              言葉を伝える
+              声を放つ
             </button>
           </form>
         </div>
@@ -357,22 +414,22 @@
       <!-- 行動後のリアクション表示エリア（選択後に表示） -->
       <div id="reaction-area" class="reaction-card hidden" aria-live="polite">
         <div class="reaction-your-choice">
-          <span class="reaction-tag">あなたの言葉・選択</span>
+          <span class="reaction-tag">YOUR ACTION // あなたの選択・言葉</span>
           <p id="reaction-player-text"></p>
         </div>
         <div class="reaction-story-response">
-          <span class="reaction-tag">物語の反応</span>
+          <span class="reaction-tag">ECHO IN THE ROOM // 教室の反応</span>
           <p id="reaction-ai-text"></p>
         </div>
         <button type="button" id="next-chapter-btn" class="btn btn-primary btn-lg">
-          次の部へ進む ➔
+          次の幕へ進む ➔
         </button>
       </div>
     </section>
 
     <!-- 5. エンディング＆陽菜からの手紙セクション -->
-    <section id="ending-section" class="section-card hidden">
-      <div class="ending-hero">
+    <section id="ending-section" class="section-card horror-frame hidden">
+      <div id="ending-hero-box" class="ending-hero">
         <span id="ending-badge" class="ending-badge">ENDING</span>
         <span id="ending-category" class="ending-category"></span>
         <h2 id="ending-title" class="ending-title"></h2>
@@ -382,40 +439,40 @@
       <article id="ending-paragraphs" class="novel-body ending-body"></article>
 
       <div class="alert alert-info">
-        <strong>📌 エンディング解説:</strong>
+        <strong>📌 エンディング解析:</strong>
         <p id="ending-reflection" class="small-note"></p>
       </div>
 
-      <!-- 陽菜からのあなた専用の手紙 -->
+      <!-- 陽菜からのあなた専用の手紙（または残されたメモ） -->
       <div class="letter-card">
         <div class="letter-header">
-          <h3>💌 朝霧 陽菜（A）からあなたへ届いた手紙</h3>
-          <span class="caption-text">事前診断の回答と、あなたが物語の中で選んだ言葉をもとに綴られた手紙です</span>
+          <h3 id="letter-heading-title">💌 朝霧 陽菜（A）から届いた手紙</h3>
+          <span class="caption-text">事前診断のカルテと、あなたが物語の中で選んだ言葉をもとに綴られた記録です</span>
         </div>
         <div id="letter-loading" class="loading-indicator hidden" role="status">
           <span class="spinner" aria-hidden="true"></span>
-          <span>陽菜があなたへの手紙を書いています...</span>
+          <span>陽菜からの手紙を生成しています...</span>
         </div>
         <div id="letter-content" class="letter-content"></div>
         <div class="letter-actions">
           <button type="button" id="download-letter-btn" class="btn btn-secondary">
-            💾 手紙と物語の記録を保存（.txt）
+            💾 手紙とプレイ記録を保存（.txt）
           </button>
         </div>
       </div>
 
       <!-- あなたの選択の軌跡 -->
       <details class="expander" open>
-        <summary class="expander-summary">📖 あなたが歩んだ物語の軌跡（全5部）</summary>
+        <summary class="expander-summary">📖 あなたが辿った全5幕の記録</summary>
         <div id="action-logs-list" class="expander-body logs-list"></div>
       </details>
 
       <!-- 全8種エンディングコレクション -->
       <details class="expander" open>
-        <summary class="expander-summary">🏆 マルチエンディング図鑑（全8種）</summary>
+        <summary class="expander-summary">🏆 マルチエンディングアーカイブ（全8種）</summary>
         <div class="expander-body">
           <p class="caption-text">
-            IBS当事者向けの救済エンド2種と、非当事者向けの多様なエンディング（トゥルー・ハッピー・AI共創・ビター・バッド2種）が用意されています。
+            IBS当事者向けの救済生還エンド2種と、非当事者向けの生還エンド・ホラーバッドエンドを含む全8種の記録です。
           </p>
           <div id="ending-collection-grid" class="ending-collection-grid"></div>
         </div>
@@ -423,17 +480,17 @@
 
       <div class="grid-2">
         <button type="button" id="replay-same-diagnosis-btn" class="btn btn-primary">
-          🔁 同じ診断設定で別の選択・対話を試す
+          🔁 同じ診断カルテで別の選択・対話を試す
         </button>
         <button type="button" id="restart-from-diagnosis-btn" class="btn btn-secondary">
-          🧭 事前診断からやり直して別のストーリーを作る
+          📋 事前診断からやり直して別の悪夢・視点へ
         </button>
       </div>
     </section>
 
     <footer class="app-footer">
       <p class="caption-text">
-        🌿 『静寂の教室と、ふたりの呼吸』 — 見えない痛みに想像力を。この作品はIBS（過敏性腸症候群）への理解と共感を広げるために制作された対話型ストーリーです。
+        👁️ SILENT CLASSROOM 『静寂の教室と、ふたりの呼吸』 — 外からは見えない痛みの恐怖と、理解による救済を描く対話型ノベルゲーム
       </p>
     </footer>
   </main>

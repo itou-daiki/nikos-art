@@ -8,6 +8,7 @@ import {
   buildPersonalizedChapterAiPrompt,
   buildPersonalizedChapters,
   buildPreDiagnosisAiPrompt,
+  calculateDynamicBpm,
   callGeminiWithFallback,
   createInitialMetrics,
   createStoryBlueprint,
@@ -18,6 +19,7 @@ import {
   formatApiErrors,
   formatFileTimestamp,
   parsePersonalizedChapterRewrite,
+  tokenizeHorrorText,
 } from '../core.js';
 
 /**
@@ -104,7 +106,7 @@ test('pre-diagnosis selects distinct routes for IBS patient, best friend (v1), a
   assert.equal(v2Bp.isPatientRoute, false);
 });
 
-test('story chapters dynamically change stage, crisis text, and monologue based on pre-diagnosis', () => {
+test('story chapters dynamically change stage, crisis text, monologue, and horror HUD parameters', () => {
   const answersClass = createSampleAnswers({
     triggerScene: 'japanese_class',
     copingStyle: 'endure_alone',
@@ -124,19 +126,56 @@ test('story chapters dynamically change stage, crisis text, and monologue based 
   assert.equal(chaptersClass.length, 5);
   assert.equal(chaptersTrain.length, 5);
 
-  // 第1部（伏線）、第2部（舞台・危機描写）、第3部（相談のきっかけ）、第4部（Aの過去編）が事前診断で変化していることを検証
+  // 第1幕（伏線）、第2幕（舞台・危機描写）、第3幕（相談のきっかけ）、第4幕（Aの過去編）が事前診断で変化していることを検証
   assert.notEqual(chaptersClass[0].paragraphs[1], chaptersTrain[0].paragraphs[1]);
-  assert.match(chaptersClass[1].locationLabel, /5限目・現代文の教室/);
-  assert.match(chaptersTrain[1].locationLabel, /朝の快速電車/);
+  assert.match(chaptersClass[1].locationLabel, /5限目・現代文の密室教室/);
+  assert.match(chaptersTrain[1].locationLabel, /急行電車・開かない扉の前/);
   assert.notEqual(chaptersClass[1].paragraphs[0], chaptersTrain[1].paragraphs[0]);
   assert.notEqual(chaptersClass[2].paragraphs[0], chaptersTrain[2].paragraphs[0]);
   assert.notEqual(chaptersClass[3].paragraphs[1], chaptersTrain[3].paragraphs[1]);
+
+  // 第2幕（クライシス）は心拍数・静寂度・視線の目が急上昇し、第5幕（解決）では落ち着くことを検証
+  assert.ok(chaptersClass[1].baseBpm >= 135);
+  assert.ok(chaptersClass[1].silenceLevel >= 90);
+  assert.ok(chaptersClass[1].gazeEyesCount >= 12);
+  assert.equal(chaptersClass[4].gazeEyesCount, 0);
 
   // 心のクセ（copingStyle）によってモノローグが変化していることを検証
   assert.notEqual(chaptersClass[1].innerMonologue, chaptersTrain[1].innerMonologue);
 });
 
-test('IBS patient route always reaches a salvation ending and never a bad ending', () => {
+test('calculateDynamicBpm and tokenizeHorrorText work accurately for horror UI', () => {
+  const calmMetrics = {
+    empathy: 10,
+    assumption: 0,
+    courage: 5,
+    trust: 8,
+    freeTalkCount: 1,
+  };
+  const panicMetrics = {
+    empathy: 0,
+    assumption: 5,
+    courage: 0,
+    trust: -2,
+    freeTalkCount: 0,
+  };
+
+  const bpmCalm = calculateDynamicBpm(100, calmMetrics);
+  const bpmPanic = calculateDynamicBpm(100, panicMetrics);
+  assert.ok(bpmCalm < 100);
+  assert.ok(bpmPanic >= 130);
+
+  const tokens = tokenizeHorrorText(
+    '教室でお腹が痛い時に「さっきさ、あの子オナラしてたよね？笑」と言われたが、「——私も。」で救われた'
+  );
+  const crimsonTokens = tokens.filter((t) => t.kind === 'crimson');
+  const salvageTokens = tokens.filter((t) => t.kind === 'salvage');
+  assert.ok(crimsonTokens.length >= 2);
+  assert.equal(salvageTokens.length, 1);
+  assert.equal(salvageTokens[0].text, '「——私も。」');
+});
+
+test('IBS patient route always reaches a salvation ending and never a horror bad ending', () => {
   const patientBp = createStoryBlueprint(
     createSampleAnswers({
       experience: 'ibs_patient',
@@ -153,6 +192,7 @@ test('IBS patient route always reaches a salvation ending and never a bad ending
   };
   const trueSalvation = determineEnding(patientBp, highMetrics);
   assert.equal(trueSalvation.id, 'healing_true');
+  assert.equal(trueSalvation.isHorrorBadEnd, false);
 
   const lowMetrics = {
     empathy: 4,
@@ -163,16 +203,17 @@ test('IBS patient route always reaches a salvation ending and never a bad ending
   };
   const gentleSalvation = determineEnding(patientBp, lowMetrics);
   assert.equal(gentleSalvation.id, 'healing_gentle');
+  assert.equal(gentleSalvation.isHorrorBadEnd, false);
 });
 
-test('non-patient routes branch into true, happy, AI co-creation, bitter, and bad endings', () => {
+test('non-patient routes branch into true, happy, AI co-creation, bitter, and horror bad endings', () => {
   const v2Bp = createStoryBlueprint(
     createSampleAnswers({
       relationship: 'distant_classmate',
     })
   );
 
-  // 1. 決めつけバッドエンド
+  // 1. 決めつけホラーバッドエンド
   const badAssume = determineEnding(v2Bp, {
     empathy: 5,
     assumption: 7,
@@ -181,8 +222,9 @@ test('non-patient routes branch into true, happy, AI co-creation, bitter, and ba
     freeTalkCount: 0,
   });
   assert.equal(badAssume.id, 'bad_assumption');
+  assert.equal(badAssume.isHorrorBadEnd, true);
 
-  // 2. 同調圧力・孤立バッドエンド
+  // 2. 同調圧力・視線の牢獄ホラーバッドエンド
   const badConform = determineEnding(v2Bp, {
     empathy: 1,
     assumption: 2,
@@ -191,6 +233,7 @@ test('non-patient routes branch into true, happy, AI co-creation, bitter, and ba
     freeTalkCount: 0,
   });
   assert.equal(badConform.id, 'bad_conformity');
+  assert.equal(badConform.isHorrorBadEnd, true);
 
   // 3. AI共創スペシャルエンド
   const aiCoCreation = determineEnding(v2Bp, {
@@ -201,6 +244,7 @@ test('non-patient routes branch into true, happy, AI co-creation, bitter, and ba
     freeTalkCount: 3,
   });
   assert.equal(aiCoCreation.id, 'ai_cocreation');
+  assert.equal(aiCoCreation.isHorrorBadEnd, false);
 
   // 4. トゥルーエンド
   const trueEnd = determineEnding(v2Bp, {
@@ -327,7 +371,7 @@ test('prompt builders and helper utilities produce valid output', () => {
     metrics,
     lastReactionText: '前回の余韻',
   });
-  assert.match(chapterPrompt, /第二部/);
+  assert.match(chapterPrompt, /第二幕/);
 
   const ending = determineEnding(bp, metrics);
   const letterPrompt = buildPersonalLetterPrompt({
@@ -337,7 +381,7 @@ test('prompt builders and helper utilities produce valid output', () => {
     actionLogs: [
       {
         chapterNumber: 1,
-        chapterTitle: '第一部',
+        chapterTitle: '第一幕',
         playerInput: '元気？',
         isFreeTalk: false,
         aiReaction: '笑顔で頷いた',
